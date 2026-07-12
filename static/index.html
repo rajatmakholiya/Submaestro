@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sourcer</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⬇️</text></svg>">
+</head>
+<body>
+<header>
+  <h1>⬇️ Sourcer</h1>
+  <nav class="toolnav">
+    <a href="/" class="active">Downloader</a>
+    <a href="/subtitles.html">Subtitles</a>
+  </nav>
+  <button id="settingsBtn" class="ghost" title="Settings">⚙️ Settings</button>
+</header>
+
+<main>
+  <!-- URL input -->
+  <section class="card">
+    <div class="url-row">
+      <input id="urlInput" type="url" placeholder="Paste a YouTube URL…" autofocus>
+      <button id="probeBtn" class="primary">Fetch</button>
+    </div>
+    <div id="probeError" class="error hidden"></div>
+  </section>
+
+  <!-- Video info + options -->
+  <section id="videoCard" class="card hidden">
+    <div class="video-info">
+      <img id="thumb" alt="thumbnail">
+      <div>
+        <h2 id="videoTitle"></h2>
+        <p id="videoMeta" class="muted"></p>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button id="tabVideo" class="tab active">🎬 Video</button>
+      <button id="tabAudio" class="tab">🎵 MP3</button>
+    </div>
+
+    <div class="options">
+      <div id="videoOpts" class="opt-grid">
+        <label>Quality
+          <select id="videoQuality"></select>
+        </label>
+        <label>Container
+          <select id="videoContainer">
+            <option value="mp4">MP4</option>
+            <option value="mkv">MKV</option>
+            <option value="webm">WebM</option>
+          </select>
+        </label>
+      </div>
+      <label class="check muted-small" id="reencodeLabel">
+        <input type="checkbox" id="reencodeH264" checked>
+        Re-encode to H.264 (Premiere / editor compatible — needed for 4K, which YouTube only serves as VP9/AV1)
+      </label>
+
+      <div id="audioOpts" class="opt-grid hidden">
+        <label>MP3 bitrate
+          <select id="audioQuality">
+            <option value="320">320 kbps (best)</option>
+            <option value="256">256 kbps</option>
+            <option value="192" selected>192 kbps</option>
+            <option value="128">128 kbps</option>
+            <option value="96">96 kbps</option>
+            <option value="64">64 kbps</option>
+          </select>
+        </label>
+      </div>
+
+      <!-- Trim -->
+      <div class="trim-box">
+        <label class="check">
+          <input type="checkbox" id="trimEnable"> Trim to a section
+        </label>
+        <div id="trimControls" class="hidden">
+          <div class="trim-row">
+            <label>Start <input id="trimStart" type="text" placeholder="0:00" size="9"></label>
+            <div class="dual-slider">
+              <div class="slider-track"><div id="sliderFill" class="slider-fill"></div></div>
+              <input type="range" id="rangeStart" min="0" max="100" value="0" step="0.1">
+              <input type="range" id="rangeEnd" min="0" max="100" value="100" step="0.1">
+            </div>
+            <label>End <input id="trimEnd" type="text" placeholder="0:00" size="9"></label>
+          </div>
+          <label class="check muted-small" id="preciseCutLabel">
+            <input type="checkbox" id="preciseCut">
+            Precise cut (re-encodes at cut points — exact timing, slower)
+          </label>
+          <p class="muted-small hidden" id="audioTrimNote">MP3 trims are always frame-exact.</p>
+        </div>
+      </div>
+
+      <button id="downloadBtn" class="primary big">⬇ Download</button>
+    </div>
+  </section>
+
+  <!-- Jobs -->
+  <section id="jobsCard" class="card hidden">
+    <h3>Downloads</h3>
+    <div id="jobsList"></div>
+  </section>
+</main>
+
+<!-- Settings modal -->
+<div id="settingsModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Settings</h2>
+      <button id="closeSettings" class="ghost">✕</button>
+    </div>
+
+    <p class="muted-small">
+      If downloads start failing with “Sign in to confirm you're not a bot” or 403 errors,
+      fix it here once: update yt-dlp, add cookies, or set a proxy. The app also
+      auto-retries with alternate player clients before giving up.
+    </p>
+
+    <h4>yt-dlp <span id="ytdlpVersion" class="pill"></span></h4>
+    <div class="row">
+      <button id="updateYtdlp">⟳ Update yt-dlp</button>
+      <span id="updateStatus" class="muted-small"></span>
+    </div>
+
+    <h4>Cookies (fixes login / bot-check / age-restricted errors)</h4>
+    <label>Mode
+      <select id="cookiesMode">
+        <option value="none">None</option>
+        <option value="file">Pasted cookies.txt (recommended)</option>
+        <option value="browser">Read from browser</option>
+      </select>
+    </label>
+    <div id="cookiesFileBox" class="hidden">
+      <p class="muted-small">
+        Install the <b>“Get cookies.txt LOCALLY”</b> extension, export cookies while
+        logged in to youtube.com, and paste the file contents below.
+        <span id="cookiesStatus" class="pill"></span>
+      </p>
+      <textarea id="cookiesText" rows="5" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;..."></textarea>
+      <div class="row">
+        <button id="saveCookies">Save cookies</button>
+        <button id="clearCookies" class="ghost">Clear</button>
+      </div>
+    </div>
+    <div id="cookiesBrowserBox" class="hidden">
+      <label>Browser
+        <select id="cookiesBrowser">
+          <option value="firefox">Firefox</option>
+          <option value="chrome">Chrome</option>
+          <option value="edge">Edge</option>
+          <option value="brave">Brave</option>
+          <option value="opera">Opera</option>
+          <option value="vivaldi">Vivaldi</option>
+        </select>
+      </label>
+      <p class="muted-small">Note: Chromium browsers on Windows may block cookie reads while
+        running. If it fails, close the browser first or use the paste method.</p>
+    </div>
+
+    <h4>Network</h4>
+    <label>Proxy URL
+      <input id="proxyInput" type="text" placeholder="http://user:pass@host:port or socks5://host:port">
+    </label>
+    <div class="opt-grid">
+      <label>Parallel fragments
+        <select id="concFrags">
+          <option>1</option><option>2</option><option selected>4</option>
+          <option>8</option><option>16</option>
+        </select>
+      </label>
+      <label>Speed limit (KB/s, 0 = off)
+        <input id="rateLimit" type="number" min="0" value="0">
+      </label>
+    </div>
+
+    <div class="row end">
+      <button id="saveSettings" class="primary">Save settings</button>
+      <span id="settingsStatus" class="muted-small"></span>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

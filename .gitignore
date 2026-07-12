@@ -1,0 +1,12 @@
+# secrets — never commit
+.env
+
+# python venv
+.venv/
+
+# generated / working data
+downloads/
+subtitles_work/
+data/
+__pycache__/
+*.pyc

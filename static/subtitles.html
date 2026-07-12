@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sourcer · Subtitles</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+</head>
+<body>
+<header>
+  <h1>💬 Subtitles</h1>
+  <nav class="toolnav">
+    <a href="/">Downloader</a>
+    <a href="/subtitles.html" class="active">Subtitles</a>
+  </nav>
+  <span id="gatewayPill" class="pill">checking…</span>
+</header>
+
+<main class="wide">
+
+  <!-- Step 1: upload -->
+  <section id="uploadCard" class="card">
+    <div id="dropzone" class="dropzone">
+      <input type="file" id="fileInput" accept="video/*" hidden>
+      <div class="dz-inner">
+        <div class="dz-icon">🎬</div>
+        <p><b>Drop a video here</b> or click to choose</p>
+        <p class="muted-small">MP4, MKV, MOV, WebM, AVI — audio is transcribed with AI, then you can edit captions before rendering.</p>
+      </div>
+    </div>
+    <div id="uploadProgress" class="hidden">
+      <p id="uploadLabel" class="muted-small"></p>
+      <div class="progress"><div style="width:0%"></div></div>
+    </div>
+    <div id="uploadError" class="error hidden"></div>
+  </section>
+
+  <!-- Step 2: editor -->
+  <section id="editorCard" class="hidden">
+    <div class="editor-grid">
+
+      <!-- Left: preview -->
+      <div class="preview-col card">
+        <div class="video-wrap" id="videoWrap">
+          <video id="player" controls></video>
+          <div id="capOverlay" class="cap-overlay"></div>
+        </div>
+        <div id="transcribeBox">
+          <button id="transcribeBtn" class="primary big">✨ Generate subtitles with AI</button>
+          <div id="transcribeStatus" class="hidden">
+            <p id="transStatusLabel" class="muted-small"></p>
+            <div class="progress"><div style="width:0%"></div></div>
+          </div>
+          <p id="transcribeError" class="error hidden"></p>
+        </div>
+      </div>
+
+      <!-- Right: style + render -->
+      <div class="style-col card">
+        <h3>Style</h3>
+        <div class="style-scroll">
+          <label>Font
+            <select id="stFont">
+              <option>Arial</option><option>Arial Black</option><option>Segoe UI</option>
+              <option>Segoe UI Black</option><option>Bahnschrift</option><option>Calibri</option>
+              <option>Cambria</option><option>Candara</option><option>Consolas</option>
+              <option>Constantia</option><option>Corbel</option><option>Comic Sans MS</option>
+              <option>Courier New</option><option>Ebrima</option><option>Franklin Gothic Medium</option>
+              <option>Gabriola</option><option>Gill Sans MT</option><option>Georgia</option>
+              <option>Impact</option><option>Ink Free</option><option>Lucida Console</option>
+              <option>Lucida Sans</option><option>Palatino Linotype</option><option>Rockwell</option>
+              <option>Sitka</option><option>Tahoma</option><option>Times New Roman</option>
+              <option>Trebuchet MS</option><option>Verdana</option>
+            </select>
+          </label>
+          <div class="opt-grid">
+            <label>Size <input type="range" id="stSize" min="18" max="160" value="54"><span id="stSizeVal" class="mini"></span></label>
+            <label>Thickness <input type="range" id="stWeight" min="100" max="900" step="100" value="700"><span id="stWeightVal" class="mini"></span></label>
+          </div>
+          <div class="opt-grid">
+            <label>Text color <input type="color" id="stPrimary" value="#ffffff"></label>
+            <label>Highlight color <input type="color" id="stAccent" value="#ffe24d"></label>
+          </div>
+          <div class="opt-grid">
+            <label>Outline color <input type="color" id="stOutlineColor" value="#000000"></label>
+            <label>Outline <input type="range" id="stOutline" min="0" max="10" step="0.5" value="3"><span id="stOutlineVal" class="mini"></span></label>
+          </div>
+          <div class="opt-grid">
+            <label>Shadow <input type="range" id="stShadow" min="0" max="6" step="0.5" value="1"><span id="stShadowVal" class="mini"></span></label>
+            <label>Background
+              <select id="stBackground"><option value="none">None</option><option value="box">Solid box</option><option value="blur">Translucent</option></select>
+            </label>
+          </div>
+          <label class="opt-grid" style="align-items:center">Box opacity <input type="range" id="stBoxOpacity" min="0.2" max="1" step="0.05" value="0.55"><span id="stBoxOpacityVal" class="mini"></span></label>
+
+          <label>Caption width <input type="range" id="stWidth" min="30" max="100" step="1" value="84"><span id="stWidthVal" class="mini"></span></label>
+          <label>Vertical position
+            <input type="range" id="stVpos" min="0" max="100" step="0.5" value="90">
+            <span id="stVposVal" class="mini"></span>
+          </label>
+          <div class="pos-quick">
+            <button type="button" class="vq" data-v="8">Top</button>
+            <button type="button" class="vq" data-v="50">Center</button>
+            <button type="button" class="vq" data-v="90">Bottom</button>
+          </div>
+          <div class="chip-row">
+            <label class="chip"><input type="checkbox" id="stItalic"> Italic</label>
+            <label class="chip"><input type="checkbox" id="stUppercase"> UPPERCASE</label>
+          </div>
+          <label>Caption style
+            <select id="stHighlight">
+              <option value="none">Static — plain caption</option>
+              <option value="karaoke">Karaoke — color sweeps with the voice</option>
+              <option value="active">Active word — spoken word lights up</option>
+              <option value="wordbyword">Word-by-word — words appear as spoken</option>
+              <option value="focus">Focus — one big word at a time</option>
+            </select>
+          </label>
+          <label class="chip" style="align-self:flex-start"><input type="checkbox" id="stPopIn"> Pop-in — captions land with a punch</label>
+          <div class="preset-row">
+            <span class="muted-small">Presets:</span>
+            <button class="preset" data-preset="reels">📱 Shorts / Reels</button>
+            <button class="preset" data-preset="clean">Clean</button>
+            <button class="preset" data-preset="viral">Viral</button>
+            <button class="preset" data-preset="boxed">Boxed</button>
+            <button class="preset" data-preset="minimal">Minimal</button>
+          </div>
+          <div class="preset-row">
+            <span class="muted-small">My presets:</span>
+            <span id="customPresetList" style="display:contents"></span>
+            <button id="savePresetBtn" class="preset" title="Save the current style + export settings as a reusable preset">💾 Save current…</button>
+          </div>
+        </div>
+
+        <h3 style="margin-top:16px">Export</h3>
+        <div class="opt-grid">
+          <label>Aspect ratio
+            <select id="exportRatio">
+              <option value="source">Original (source)</option>
+              <option value="9:16">9:16 — Reels / Shorts / TikTok</option>
+              <option value="1:1">1:1 — Square</option>
+              <option value="4:5">4:5 — Instagram portrait</option>
+              <option value="16:9">16:9 — Widescreen</option>
+              <option value="4:3">4:3 — Classic</option>
+              <option value="21:9">21:9 — Cinematic</option>
+            </select>
+          </label>
+          <label>Fit
+            <select id="exportFit">
+              <option value="crop">Crop to fill</option>
+              <option value="pad">Pad (letterbox)</option>
+            </select>
+          </label>
+        </div>
+        <label class="opt-grid hidden" id="padColorRow" style="align-items:center">Bar color
+          <input type="color" id="padColor" value="#000000">
+        </label>
+
+        <h3 style="margin-top:16px">Render</h3>
+        <div class="opt-grid">
+          <label>Mode
+            <select id="renderMode">
+              <option value="burn">Burn into video (styled)</option>
+              <option value="soft">Soft subtitles (toggleable)</option>
+            </select>
+          </label>
+          <label>Quality
+            <select id="renderCrf">
+              <option value="18">High (larger)</option>
+              <option value="20" selected>Balanced</option>
+              <option value="23">Smaller file</option>
+            </select>
+          </label>
+        </div>
+        <button id="renderBtn" class="primary big" disabled>⬇ Render video with subtitles</button>
+        <div id="renderStatus" class="hidden">
+          <p id="renderStatusLabel" class="muted-small"></p>
+          <div class="progress"><div style="width:0%"></div></div>
+        </div>
+        <div id="renderResult"></div>
+      </div>
+    </div>
+
+    <!-- Cues editor -->
+    <div id="cuesCard" class="card hidden">
+      <div class="cues-head">
+        <h3>Captions <span id="cueCount" class="pill"></span></h3>
+        <div class="muted-small">Click a row to jump the video there. Edit text and times freely. ✂ splits a line at the cursor (Ctrl+Enter works too); ⤵ merges it with the next line.</div>
+      </div>
+      <div class="sync-box">
+        <label>Sync offset
+          <input type="range" id="syncOffset" min="-3" max="3" step="0.05" value="0">
+          <span id="syncOffsetVal" class="mini"></span>
+        </label>
+        <div class="sync-actions">
+          <button type="button" class="ghost sync-nudge" data-d="-0.1">−0.1s</button>
+          <button type="button" class="ghost sync-nudge" data-d="0.1">+0.1s</button>
+          <button type="button" class="ghost" id="syncReset">Reset</button>
+        </div>
+        <p class="muted-small">If captions run ahead of the voice, drag right (+); if they lag behind, drag left (−). Applies to the whole track, in preview and export.</p>
+      </div>
+      <div id="cuesList" class="cues-list"></div>
+      <button id="addCue" class="ghost">+ Add caption</button>
+    </div>
+  </section>
+</main>
+
+<script src="subtitles.js"></script>
+</body>
+</html>
