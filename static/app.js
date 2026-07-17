@@ -271,9 +271,42 @@ async function openSettings() {
   $("rateLimit").value = s.rate_limit_kbps || 0;
   $("ytdlpVersion").textContent = `v${s.ytdlp_version}`;
   $("cookiesStatus").textContent = s.has_cookies_file ? "✓ cookies saved" : "no cookies saved";
+  renderPotStatus(s.pot_provider, s.node_available);
   toggleCookieBoxes();
   $("settingsModal").classList.remove("hidden");
 }
+
+function renderPotStatus(pot, nodeOk) {
+  pot = pot || { state: "unknown", detail: "" };
+  const pill = $("potStatus");
+  const map = {
+    healthy:    ["✓ running", "ok"],
+    starting:   ["… starting", "warn"],
+    docker_down:["✗ Docker off", "err"],
+    no_docker:  ["✗ no Docker", "err"],
+    unknown:    ["… checking", "warn"],
+    error:      ["✗ error", "err"],
+  };
+  const [label, cls] = map[pot.state] || map.unknown;
+  pill.textContent = label + (pot.version ? ` (v${pot.version})` : "");
+  pill.className = "pill " + cls;
+  $("potDetail").textContent = pot.state === "healthy" ? "" : " " + (pot.detail || "");
+  $("potNode").textContent = nodeOk
+    ? "Node runtime detected (n-sig challenge solver ready)."
+    : "⚠ Node ≥22 not found on PATH — install it so streams aren't throttled.";
+}
+
+$("potRetry").addEventListener("click", async () => {
+  $("potStatus").textContent = "… retrying";
+  $("potStatus").className = "pill warn";
+  try {
+    const pot = await post("/api/pot-restart", {});
+    const s = await api("/api/settings");
+    renderPotStatus(pot, s.node_available);
+  } catch (e) {
+    renderPotStatus({ state: "error", detail: e.message }, true);
+  }
+});
 
 $("cookiesMode").addEventListener("change", toggleCookieBoxes);
 function toggleCookieBoxes() {

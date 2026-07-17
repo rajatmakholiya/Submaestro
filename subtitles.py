@@ -445,6 +445,146 @@ def reconcile_words(cues: list[dict]) -> list[dict]:
     return cues
 
 
+# ---------------------------------------------------------------- keyword emphasis
+#
+# Emphasized words are marked inline with asterisks: "meet *Elon Musk* today".
+# The markers live in cue text AND word tokens, so they survive splits, merges
+# and hand edits; every renderer parses + strips them (ASS burn, live preview),
+# and plain exports (SRT) strip them. Marks come from the AI keyword pass, the
+# heuristic fallback, or the user typing them directly.
+
+_EM_CLOSE = re.compile(r"^(.*)\*([.,;:!?…\"')\]]*)$")
+
+
+def parse_em_tokens(tokens: list[str]) -> list[tuple[str, bool]]:
+    """[(clean_token, emphasized)] — supports single words and *multi word* spans."""
+    out: list[tuple[str, bool]] = []
+    em = False
+    for t in tokens:
+        opened = False
+        if t.startswith("*") and len(t) > 1:
+            t = t[1:]
+            em = True
+            opened = True
+        closed = False
+        m = _EM_CLOSE.match(t)
+        if m and (em or opened) and m.group(1):
+            t = m.group(1) + m.group(2)
+            closed = True
+        out.append((t, em))
+        if closed:
+            em = False
+    return out
+
+
+def strip_em(text: str) -> str:
+    return " ".join(t for t, _ in parse_em_tokens(text.split()))
+
+
+_KW_PROMPT = (
+    "You highlight keywords in short-form video captions.\n"
+    "For each numbered caption line below, choose the words that deserve visual "
+    "emphasis: names of people, places, brands and products; numbers, money and "
+    "stats; and the single most impactful word of a line when it clearly carries "
+    "the punch. Most lines have 0-2 such words. Never pick filler words.\n"
+    'Return ONLY valid JSON: {"lines":[{"i":<line number>,"w":[<0-based word '
+    "positions within that line>]}]}\n"
+    "Omit lines with no keywords. No markdown fences.\n"
+    "Lines:\n"
+)
+
+
+def _gateway_text(prompt: str) -> str:
+    """Plain-text call through the Vercel AI Gateway (same transport as audio)."""
+    body = {
+        "prompt": [{"role": "user",
+                    "content": [{"type": "text", "text": prompt}]}],
+        "temperature": 0,
+    }
+    req = urllib.request.Request(
+        GATEWAY_URL,
+        data=json.dumps(body).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {gateway_key()}",
+            "ai-gateway-protocol-version": "0.0.1",
+            "ai-language-model-specification-version": "4",
+            "ai-language-model-id": GATEWAY_MODEL,
+            "ai-language-model-streaming": "false",
+        },
+        method="POST",
+    )
+    try:
+        resp = urllib.request.urlopen(req, timeout=120)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode(errors="ignore")[:300]
+        raise RuntimeError(f"Gateway keyword call failed (HTTP {e.code}): {detail}")
+    data = json.loads(resp.read().decode())
+    return "".join(p.get("text", "") for p in (data.get("content") or [])
+                   if p.get("type") == "text")
+
+
+_KW_PUNCT = ".,;:!?…\"'()[]"
+
+
+def _heuristic_keywords(tokens: list[str]) -> list[int]:
+    """No-AI fallback: proper nouns (capitalized mid-line), numbers, money."""
+    out = []
+    for i, t in enumerate(tokens):
+        core = t.strip(_KW_PUNCT)
+        if len(core) < 2:
+            continue
+        if any(ch.isdigit() for ch in core) or core.startswith(("$", "€", "£")):
+            out.append(i)
+        elif i > 0 and core[0].isupper() and core.lower() not in CONNECTORS:
+            out.append(i)
+    return out[:3]
+
+
+def detect_keywords(cues: list[dict]) -> tuple[list[dict], str]:
+    """Mark emphasis-worthy words in each cue with *asterisks* (replacing any
+    existing marks). Tries the AI gateway; falls back to the heuristic.
+    Returns (cues, engine) where engine is "ai" or "heuristic"."""
+    tok_lists: list[list[str]] = []
+    for c in cues:
+        ws = c.get("words") or []
+        raw = [w["w"] for w in ws] if ws else (c.get("text") or "").split()
+        tok_lists.append([t for t, _ in parse_em_tokens(raw)])  # clear old marks
+
+    idx_map: dict[int, list[int]] = {}
+    engine = "heuristic"
+    if (os.environ.get("AI_GATEWAY_API_KEY") or "").strip():
+        try:
+            numbered = "\n".join(f"{i}: {' '.join(toks)}"
+                                 for i, toks in enumerate(tok_lists) if toks)
+            text = _gateway_text(_KW_PROMPT + numbered)
+            clean = text.replace("```json", "").replace("```", "")
+            m = re.search(r"\{[\s\S]*\}", clean)
+            data = json.loads(m.group(0)) if m else {}
+            for ln in data.get("lines", []):
+                i, wjs = ln.get("i"), ln.get("w") or []
+                if isinstance(i, int) and isinstance(wjs, list):
+                    idx_map[i] = [j for j in wjs if isinstance(j, int)]
+            engine = "ai"
+        except Exception:  # noqa: BLE001 — any AI failure falls back cleanly
+            idx_map = {}
+    if engine != "ai":
+        for i, toks in enumerate(tok_lists):
+            idx_map[i] = _heuristic_keywords(toks)
+
+    for i, (c, toks) in enumerate(zip(cues, tok_lists)):
+        marked = list(toks)
+        for j in idx_map.get(i, []):
+            if 0 <= j < len(marked):
+                marked[j] = f"*{marked[j]}*"
+        c["text"] = " ".join(marked)
+        ws = c.get("words") or []
+        if len(ws) == len(marked):
+            for w, t in zip(ws, marked):
+                w["w"] = t
+    return cues, engine
+
+
 # ---------------------------------------------------------------- ASS export
 
 @dataclass
@@ -454,9 +594,11 @@ class SubtitleStyle:
     weight: int = 700         # font thickness 100 (thin) .. 900 (black)
     primary: str = "#FFFFFF"  # text color
     accent: str = "#FFE24D"   # karaoke / highlight color
+    keyword_color: str = "#3DFF74"  # color for *keyword*-marked words (names, stats…)
     outline_color: str = "#000000"
     outline: float = 3.0
     shadow: float = 1.0
+    glow: float = 0.0         # soft glow radius (blurred outline), 0 = off
     italic: bool = False
     uppercase: bool = False
     background: str = "none"  # none | box | blur (blur approximated as translucent box)
@@ -470,7 +612,9 @@ class SubtitleStyle:
     #   wordbyword — words appear one by one as they're spoken
     #   focus      — one big word at a time, popping in with the voice
     highlight: str = "none"
-    pop_in: bool = False      # each caption lands with a quick punch-in + fade
+    # How each caption lands: none | pop | slide | fade ("" -> legacy pop_in)
+    entrance: str = ""
+    pop_in: bool = False      # legacy toggle; superseded by `entrance`
     # legacy fields kept for backward compatibility with older callers/presets
     bold: bool = True
     position: str = "bottom"  # superseded by vpos; ignored when vpos is set
@@ -554,20 +698,44 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text
 
     # Per-line override: pin the exact position and font weight. \b accepts a
     # numeric weight (100-900) in libass, giving finer thickness than plain bold.
-    pin = f"{{\\an{align}\\pos({pos_x},{pos_y})\\b{weight}}}"
+    pin_raw = f"\\an{align}\\pos({pos_x},{pos_y})\\b{weight}"
 
     accent_c = _hex_to_ass(style.accent)
     primary_c = _hex_to_ass(style.primary)
+    kw_c = _hex_to_ass(style.keyword_color)
 
-    def tok(w: dict) -> str:
-        t = w["w"].upper() if style.uppercase else w["w"]
-        return t.replace("{", "(").replace("}", ")")  # keep ASS override syntax safe
+    # Soft glow: blur the outline edge (libass \blur). Applied to every event.
+    blur_fx = ""
+    if style.glow and style.glow > 0:
+        blur_fx = rf"\blur{round(float(style.glow) * play_h / 1080, 2)}"
 
     # Punch-in: the caption lands at 92% and springs to 100% with a slight
     # overshoot — the reference renderer's signature page pop (\t times are ms).
     POP = r"\fscx92\fscy92\t(0,90,\fscx104\fscy104)\t(90,170,\fscx100\fscy100)"
     # Focus style: every word pops in solo at 130% base scale with overshoot.
     FOCUS_POP = r"\fscx85\fscy85\t(0,80,\fscx142\fscy142)\t(80,160,\fscx130\fscy130)"
+
+    # Entrance: how a caption lands. `entrance` supersedes the legacy pop_in.
+    entrance = (style.entrance or ("pop" if style.pop_in else "none")).lower()
+    slide_dy = max(12, int(round(play_h * 0.03)))
+    # slide replaces \pos with \move (same anchor, rising into place)
+    slide_raw = (f"\\an{align}\\move({pos_x},{pos_y + slide_dy},"
+                 f"{pos_x},{pos_y},0,140)\\b{weight}")
+
+    def entrance_fx(out_ms: int) -> str:
+        """Full override prefix for the event that carries the entrance."""
+        if entrance == "pop":
+            return pin_raw + rf"\fad(80,{out_ms})" + POP
+        if entrance == "fade":
+            return pin_raw + rf"\fad(160,{out_ms})"
+        if entrance == "slide":
+            return slide_raw + rf"\fad(110,{out_ms})"
+        return pin_raw  # none: static, exactly as before
+
+    def em_wrap(txt: str) -> str:
+        # Keyword emphasis is color-only: changing weight per-word would reflow
+        # the line between the per-word events of active/wordbyword modes.
+        return f"{{\\1c{kw_c}&}}{txt}{{\\1c{primary_c}&}}"
 
     def emit(lines, t0, t1, overrides, body):
         if t1 <= t0:
@@ -577,21 +745,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text
             f"{{{overrides}}}{body}"
         )
 
-    pin_raw = pin[1:-1]  # override block content without braces, for composing
-
     lines = [header]
     for ci, cue in enumerate(cues):
-        text = cue["text"]
-        if style.uppercase:
-            text = text.upper()
-        text = text.replace("\n", " ").strip().replace("{", "(").replace("}", ")")
-
         ws = cue.get("words") or []
+        # Tokens + emphasis flags, from word timings when present, else the text.
+        raw = ([w["w"] for w in ws] if ws
+               else (cue.get("text") or "").replace("\n", " ").split())
+        toks: list[tuple[str, bool]] = []
+        for t, em in parse_em_tokens(raw):
+            if style.uppercase:
+                t = t.upper()
+            toks.append((t.replace("{", "(").replace("}", ")"), em))
+
         nxt_cue = cues[ci + 1] if ci + 1 < len(cues) else None
         # fade out only when the caption hides into a silence, not on hand-offs
         hides = not nxt_cue or (nxt_cue["start"] - cue["end"]) > 0.12
-        fad_in = r"\fad(80,%d)" % (120 if hides else 0)
-        base_fx = (fad_in + POP) if style.pop_in else ""
+        out_ms = 120 if hides else 0
 
         # Word-driven styles need word timings; manually added cues without
         # them fall back to a static caption.
@@ -602,8 +771,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text
             for i, w in enumerate(ws):
                 nxt = ws[i + 1]["s"] if i + 1 < len(ws) else cue["end"]
                 k_cs = max(1, int(round((nxt - w["s"]) * 100)))
-                parts.append(f"{{\\kf{k_cs}}}{tok(w)} ")
-            emit(lines, cue["start"], cue["end"], pin_raw + base_fx, "".join(parts).strip())
+                t, em = toks[i]
+                if em:
+                    # keyword color as the unsung base; the sweep target (accent)
+                    # still washes over it as the word is spoken
+                    parts.append(f"{{\\kf{k_cs}\\2c{kw_c}&}}{t} {{\\2c{primary_c}&}}")
+                else:
+                    parts.append(f"{{\\kf{k_cs}}}{t} ")
+            emit(lines, cue["start"], cue["end"],
+                 entrance_fx(out_ms) + blur_fx, "".join(parts).strip())
 
         elif mode == "active" and ws:
             # One event per word span: the spoken word carries the accent color
@@ -613,18 +789,19 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text
                 t0 = cue["start"] if i == 0 else w["s"]
                 t1 = ws[i + 1]["s"] if i + 1 < len(ws) else cue["end"]
                 parts = []
-                for j, x in enumerate(ws):
+                for j, _x in enumerate(ws):
+                    t, em = toks[j]
                     if j == i:
-                        parts.append(f"{{\\1c{accent_c}&\\b900}}{tok(x)}{{\\1c{primary_c}&\\b{weight}}}")
+                        parts.append(f"{{\\1c{accent_c}&\\b900}}{t}"
+                                     f"{{\\1c{primary_c}&\\b{weight}}}")
+                    elif em:
+                        parts.append(em_wrap(t))
                     else:
-                        parts.append(tok(x))
-                fx = pin_raw
-                if style.pop_in:
-                    if i == 0:
-                        fx += r"\fad(80,0)" + POP
-                    if i == len(ws) - 1 and hides:
-                        fx += r"\fad(0,120)"
-                emit(lines, t0, t1, fx, " ".join(parts))
+                        parts.append(t)
+                fx = entrance_fx(0) if i == 0 else pin_raw
+                if i == len(ws) - 1 and out_ms and entrance != "none":
+                    fx += rf"\fad(0,{out_ms})"
+                emit(lines, t0, t1, fx + blur_fx, " ".join(parts))
 
         elif mode == "wordbyword" and ws:
             # Cumulative reveal: all words occupy their final position from the
@@ -633,25 +810,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, Effect, Text
                 t0 = cue["start"] if i == 0 else w["s"]
                 t1 = ws[i + 1]["s"] if i + 1 < len(ws) else cue["end"]
                 parts = []
-                for j, x in enumerate(ws):
+                for j, _x in enumerate(ws):
+                    t, em = toks[j]
                     if j <= i:
-                        parts.append(tok(x))
+                        parts.append(em_wrap(t) if em else t)
                     else:
-                        parts.append(f"{{\\alpha&HFF&}}{tok(x)}{{\\alpha&H00&}}")
-                fx = pin_raw
-                if style.pop_in and i == len(ws) - 1 and hides:
-                    fx += r"\fad(0,120)"
-                emit(lines, t0, t1, fx, " ".join(parts))
+                        parts.append(f"{{\\alpha&HFF&}}{t}{{\\alpha&H00&}}")
+                fx = entrance_fx(0) if i == 0 else pin_raw
+                if i == len(ws) - 1 and out_ms and entrance != "none":
+                    fx += rf"\fad(0,{out_ms})"
+                emit(lines, t0, t1, fx + blur_fx, " ".join(parts))
 
         elif mode == "focus" and ws:
             # One big word at a time, springing in with the voice.
             for i, w in enumerate(ws):
                 t0 = cue["start"] if i == 0 else w["s"]
                 t1 = ws[i + 1]["s"] if i + 1 < len(ws) else cue["end"]
-                emit(lines, t0, t1, pin_raw + FOCUS_POP, tok(w))
+                t, em = toks[i]
+                body = f"{{\\1c{kw_c}&}}{t}" if em else t
+                emit(lines, t0, t1, pin_raw + FOCUS_POP + blur_fx, body)
 
         else:
-            emit(lines, cue["start"], cue["end"], pin_raw + base_fx, text)
+            body = " ".join(em_wrap(t) if em else t for t, em in toks)
+            emit(lines, cue["start"], cue["end"],
+                 entrance_fx(out_ms) + blur_fx, body)
 
     return "\n".join(lines) + "\n"
 
@@ -665,7 +847,8 @@ def to_srt(cues: list[dict]) -> str:
         return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
     out = []
     for i, c in enumerate(cues, 1):
-        out.append(f"{i}\n{ts(c['start'])} --> {ts(c['end'])}\n{c['text']}\n")
+        # *keyword* emphasis markers are burn-in styling; plain SRT drops them
+        out.append(f"{i}\n{ts(c['start'])} --> {ts(c['end'])}\n{strip_em(c['text'])}\n")
     return "\n".join(out)
 
 

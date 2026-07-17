@@ -8,6 +8,11 @@ Features:
   - Persistent settings: proxy, cookies (paste or from-browser), player-client fallbacks
   - Automatic retry across YouTube player clients when bot-checks / 403s appear
   - One-click yt-dlp self-update (most recurring failures are a stale yt-dlp)
+
+YouTube stream access (2026): YouTube withholds media streams unless yt-dlp
+presents a PO token AND solves the `n` signature challenge. Sourcer handles both
+automatically — see potoken.py for the auto-managed bgutil token provider, and
+base_opts() for the Node-backed challenge solver (yt-dlp-ejs).
 """
 
 import json
@@ -56,6 +61,12 @@ def _load_env():
 _load_env()
 
 import subtitles as subs  # noqa: E402
+import potoken  # noqa: E402  PO-token provider lifecycle (YouTube stream access)
+
+# YouTube's `n` signature challenge must be solved for format URLs to work; yt-dlp
+# does this via an external JS runtime (needs Node >= 22 + the yt-dlp-ejs scripts).
+# Detect Node once so we only enable the runtime when it's actually usable.
+_NODE_PATH = shutil.which("node")
 
 app = FastAPI(title="Sourcer")
 
@@ -77,7 +88,11 @@ DEFAULT_SETTINGS = {
     "proxy": "",                      # e.g. http://user:pass@host:port or socks5://...
     "cookies_mode": "none",           # none | file | browser
     "cookies_browser": "firefox",     # used when cookies_mode == "browser"
-    "player_clients": ["default", "android", "ios", "tv"],  # retry order
+    # Retry order. Only clients that honour account cookies are useful here —
+    # the mobile app clients (android/ios) ignore cookies entirely, so on a
+    # bot-checked video they fail no matter what you set, wasting retries and
+    # masking the fact that a web client + cookies would have worked.
+    "player_clients": ["default", "web_safari", "mweb", "tv"],  # retry order
     "concurrent_fragments": 4,
     "rate_limit_kbps": 0,             # 0 = unlimited
 }
@@ -85,10 +100,21 @@ DEFAULT_SETTINGS = {
 _settings_lock = threading.Lock()
 
 
+# Client lists that predate the cookie-aware defaults; upgraded on load so
+# existing installs don't keep retrying clients that ignore cookies.
+_LEGACY_CLIENT_LISTS = (
+    ["default", "android", "ios", "tv"],
+    ["default", "android", "ios"],
+    ["android", "ios"],
+)
+
+
 def load_settings() -> dict:
     if CONFIG_FILE.exists():
         try:
             saved = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+            if saved.get("player_clients") in _LEGACY_CLIENT_LISTS:
+                saved["player_clients"] = list(DEFAULT_SETTINGS["player_clients"])
             return {**DEFAULT_SETTINGS, **saved}
         except (json.JSONDecodeError, OSError):
             pass
@@ -105,7 +131,17 @@ def save_settings(s: dict) -> None:
 BOT_CHECK_PATTERNS = re.compile(
     r"sign in to confirm|not a bot|captcha|confirm your age|age.restricted|"
     r"http error 403|http error 429|unable to extract|po.token|"
-    r"requested format is not available|failed to extract any player response",
+    r"failed to extract any player response",
+    re.IGNORECASE,
+)
+
+# YouTube handed back the page but withheld the actual media streams, leaving
+# only storyboard thumbnails. This is the GVS PO-token signature — cookies get
+# you identity but not streams — NOT a stale-cookie / bot problem, so it needs
+# its own message. (Kept out of BOT_CHECK_PATTERNS so it isn't misreported.)
+NO_FORMATS_PATTERNS = re.compile(
+    r"requested format is not available|only images are available|"
+    r"no video formats found|only storyboards",
     re.IGNORECASE,
 )
 
@@ -121,6 +157,11 @@ def base_opts(settings: dict) -> dict:
         "restrictfilenames": False,
         "windowsfilenames": True,
     }
+    if _NODE_PATH:
+        # Enable the Node JS runtime so yt-dlp can solve YouTube's n-sig challenge
+        # (via yt-dlp-ejs). Without it, format URLs come back missing/throttled
+        # even when a PO token was obtained.
+        opts["js_runtimes"] = {"node": {"path": _NODE_PATH}}
     if settings.get("proxy"):
         opts["proxy"] = settings["proxy"]
     if settings.get("rate_limit_kbps"):
@@ -153,6 +194,7 @@ def run_with_fallbacks(settings: dict, extra_opts: dict, url: str, download: boo
     message if every variant fails.
     """
     last_err = None
+    no_formats = False
     for client, overlay in client_variants(settings):
         opts = {**base_opts(settings), **extra_opts, **overlay}
         try:
@@ -161,16 +203,40 @@ def run_with_fallbacks(settings: dict, extra_opts: dict, url: str, download: boo
                 return info, client
         except DownloadError as e:
             last_err = e
+            if NO_FORMATS_PATTERNS.search(str(e)):
+                no_formats = True
+                continue  # a different client might still surface real streams
             if BOT_CHECK_PATTERNS.search(str(e)):
                 continue  # try next client
             raise
     msg = str(last_err) if last_err else "unknown error"
-    hint = (
-        " — All player clients failed. Fixes (in Settings): "
-        "1) click 'Update yt-dlp' (stale versions are the #1 cause), "
-        "2) set cookies (paste a cookies.txt export from your browser), "
-        "3) configure a proxy if your IP is blocked."
-    )
+    had_cookies = settings.get("cookies_mode", "none") != "none"
+    if no_formats:
+        # Streams withheld on every client — a PO token is required. Cookies
+        # alone can't fix this (unless the account has YouTube Premium).
+        hint = (
+            " — YouTube returned no downloadable streams for this video (only "
+            "storyboard thumbnails), on every client. This means it now requires a "
+            "PO token to release the media, which cookies alone don't provide. "
+            "Fixes: 1) run a PO-token provider (bgutil) so yt-dlp mints tokens "
+            "automatically — the durable fix; 2) use cookies from a YouTube Premium "
+            "account, which are exempt from the PO-token requirement; 3) try a "
+            "different network/proxy, as flagged IPs are hit with this first."
+        )
+    elif had_cookies:
+        hint = (
+            " — Bot check hit even with cookies. Your cookies have most likely "
+            "gone stale: open youtube.com in the same browser/account, make sure "
+            "you're still logged in, then re-export and re-save the cookies. "
+            "(Tip: 'Read from browser' mode re-reads live cookies every run, so it "
+            "never goes stale.) If it still fails, your IP may be flagged — set a proxy."
+        )
+    else:
+        hint = (
+            " — YouTube wants a signed-in session. In Settings, set Cookies: either "
+            "paste a cookies.txt export, or use 'Read from browser' (Firefox is most "
+            "reliable on Windows) so a logged-in session is re-read on every download."
+        )
     raise DownloadError(msg + hint)
 
 
@@ -456,7 +522,20 @@ def get_settings():
     s = load_settings()
     s["has_cookies_file"] = COOKIES_FILE.exists()
     s["ytdlp_version"] = yt_dlp.version.__version__
+    s["node_available"] = bool(_NODE_PATH)
+    s["pot_provider"] = potoken.status()
     return s
+
+
+@app.get("/api/pot-status")
+def pot_status():
+    return potoken.status()
+
+
+@app.post("/api/pot-restart")
+def pot_restart():
+    """Force a fresh ensure() — used by the Settings 'retry' button."""
+    return potoken.ensure()
 
 
 @app.post("/api/settings")
@@ -619,6 +698,22 @@ class Cue(BaseModel):
     words: list[dict] | None = None
 
 
+class KeywordsReq(BaseModel):
+    cues: list[Cue]
+
+
+@app.post("/api/subtitles/keywords")
+def subs_keywords(req: KeywordsReq):
+    """Mark emphasis-worthy words (*keyword* syntax) in the given cues.
+
+    Uses the AI gateway when configured, else a capitalization/number
+    heuristic. Pure text transform — safe to re-run (old marks are replaced).
+    """
+    cues = [c.model_dump() for c in req.cues]
+    cues, engine = subs.detect_keywords(cues)
+    return {"cues": cues, "engine": engine}
+
+
 class RenderReq(BaseModel):
     session: str
     cues: list[Cue]
@@ -764,6 +859,13 @@ def subs_status():
 
 
 app.mount("/", StaticFiles(directory=ROOT / "static", html=True), name="static")
+
+
+@app.on_event("startup")
+def _startup():
+    # Bring the PO-token provider up in the background so downloads work without
+    # any manual step; never blocks server startup on Docker.
+    potoken.ensure_async()
 
 
 if __name__ == "__main__":

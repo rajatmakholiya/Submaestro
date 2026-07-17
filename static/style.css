@@ -248,6 +248,9 @@ label.check input { accent-color: var(--accent); }
   color: var(--muted);
   font-weight: 400;
 }
+.pill.ok   { color: #7ee2a8; border-color: #2f6b47; }
+.pill.warn { color: #f0c674; border-color: #6b5a2f; }
+.pill.err  { color: #ff8589; border-color: #6b2f33; }
 
 @media (max-width: 640px) {
   .video-info { flex-direction: column; }
@@ -314,12 +317,43 @@ main.wide { max-width: 1180px; }
   55%  { transform: scale(1.1); }
   100% { transform: scale(1); }
 }
+.cap-text.cap-slide { animation: capSlide .16s ease-out; }
+@keyframes capSlide {
+  0%   { transform: translateY(14px); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+.cap-text.cap-fade { animation: capFade .2s ease-out; }
+@keyframes capFade { from { opacity: 0; } to { opacity: 1; } }
 
 #transcribeBox { margin-top: 14px; }
 
 /* style panel */
 .style-col h3 { font-size: 15px; margin-bottom: 12px; }
-.style-scroll { display: flex; flex-direction: column; gap: 12px; }
+.style-col > .preset-row { margin-bottom: 10px; }
+.style-scroll { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+
+/* grouped, collapsible style sections */
+.stgroup {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255,255,255,.015);
+}
+.stgroup summary {
+  cursor: pointer; user-select: none; list-style: none;
+  display: flex; align-items: center;
+  padding: 10px 12px;
+  font-size: 13px; font-weight: 600; color: var(--text);
+}
+.stgroup summary::-webkit-details-marker { display: none; }
+.stgroup summary::before {
+  content: "▸"; margin-right: 8px; color: var(--muted);
+  transition: transform .15s; font-size: 11px;
+}
+.stgroup[open] summary::before { transform: rotate(90deg); }
+.stgroup-body {
+  padding: 2px 12px 12px;
+  display: flex; flex-direction: column; gap: 12px;
+}
 .style-scroll input[type="color"] {
   width: 100%; height: 34px; padding: 2px; background: var(--card2);
   border: 1px solid var(--border); border-radius: 8px; cursor: pointer;
@@ -359,6 +393,9 @@ main.wide { max-width: 1180px; }
 
 /* cues editor */
 .cues-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; gap: 12px; flex-wrap: wrap; }
+.cues-tools { display: flex; align-items: center; gap: 10px; }
+.cues-tools .ghost { border: 1px solid var(--border); padding: 7px 12px; font-size: 12.5px; }
+.cues-tools .ghost:hover { border-color: var(--accent); }
 .cues-list { display: flex; flex-direction: column; gap: 8px; max-height: 380px; overflow-y: auto; padding-right: 4px; }
 .cue {
   display: grid; grid-template-columns: 82px 82px 1fr auto; gap: 8px; align-items: center;

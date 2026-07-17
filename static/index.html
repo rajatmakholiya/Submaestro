@@ -127,6 +127,17 @@
       <span id="updateStatus" class="muted-small"></span>
     </div>
 
+    <h4>Stream access (PO token) <span id="potStatus" class="pill"></span></h4>
+    <p class="muted-small">
+      YouTube now withholds video/audio streams unless yt-dlp presents a PO token.
+      Sourcer runs a local token provider automatically — this should stay green.
+      <span id="potDetail"></span>
+    </p>
+    <div class="row">
+      <button id="potRetry" class="ghost">⟳ Retry provider</button>
+      <span id="potNode" class="muted-small"></span>
+    </div>
+
     <h4>Cookies (fixes login / bot-check / age-restricted errors)</h4>
     <label>Mode
       <select id="cookiesMode">
@@ -138,7 +149,10 @@
     <div id="cookiesFileBox" class="hidden">
       <p class="muted-small">
         Install the <b>“Get cookies.txt LOCALLY”</b> extension, export cookies while
-        logged in to youtube.com, and paste the file contents below.
+        logged in to youtube.com, and paste the file contents below. Use a
+        secondary/throwaway Google account. If a bot-check returns later, the export
+        has gone stale — just re-open youtube.com, confirm you're logged in, re-export
+        and paste again. (Prefer zero maintenance? Switch Mode to “Read from browser”.)
         <span id="cookiesStatus" class="pill"></span>
       </p>
       <textarea id="cookiesText" rows="5" placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;..."></textarea>

@@ -59,78 +59,121 @@
       <!-- Right: style + render -->
       <div class="style-col card">
         <h3>Style</h3>
-        <div class="style-scroll">
-          <label>Font
-            <select id="stFont">
-              <option>Arial</option><option>Arial Black</option><option>Segoe UI</option>
-              <option>Segoe UI Black</option><option>Bahnschrift</option><option>Calibri</option>
-              <option>Cambria</option><option>Candara</option><option>Consolas</option>
-              <option>Constantia</option><option>Corbel</option><option>Comic Sans MS</option>
-              <option>Courier New</option><option>Ebrima</option><option>Franklin Gothic Medium</option>
-              <option>Gabriola</option><option>Gill Sans MT</option><option>Georgia</option>
-              <option>Impact</option><option>Ink Free</option><option>Lucida Console</option>
-              <option>Lucida Sans</option><option>Palatino Linotype</option><option>Rockwell</option>
-              <option>Sitka</option><option>Tahoma</option><option>Times New Roman</option>
-              <option>Trebuchet MS</option><option>Verdana</option>
-            </select>
-          </label>
-          <div class="opt-grid">
-            <label>Size <input type="range" id="stSize" min="18" max="160" value="54"><span id="stSizeVal" class="mini"></span></label>
-            <label>Thickness <input type="range" id="stWeight" min="100" max="900" step="100" value="700"><span id="stWeightVal" class="mini"></span></label>
-          </div>
-          <div class="opt-grid">
-            <label>Text color <input type="color" id="stPrimary" value="#ffffff"></label>
-            <label>Highlight color <input type="color" id="stAccent" value="#ffe24d"></label>
-          </div>
-          <div class="opt-grid">
-            <label>Outline color <input type="color" id="stOutlineColor" value="#000000"></label>
-            <label>Outline <input type="range" id="stOutline" min="0" max="10" step="0.5" value="3"><span id="stOutlineVal" class="mini"></span></label>
-          </div>
-          <div class="opt-grid">
-            <label>Shadow <input type="range" id="stShadow" min="0" max="6" step="0.5" value="1"><span id="stShadowVal" class="mini"></span></label>
-            <label>Background
-              <select id="stBackground"><option value="none">None</option><option value="box">Solid box</option><option value="blur">Translucent</option></select>
-            </label>
-          </div>
-          <label class="opt-grid" style="align-items:center">Box opacity <input type="range" id="stBoxOpacity" min="0.2" max="1" step="0.05" value="0.55"><span id="stBoxOpacityVal" class="mini"></span></label>
+        <div class="preset-row">
+          <span class="muted-small">Presets:</span>
+          <button class="preset" data-preset="reels">📱 Reels</button>
+          <button class="preset" data-preset="hormozi">💰 Hormozi</button>
+          <button class="preset" data-preset="viral">🔥 Viral</button>
+          <button class="preset" data-preset="podcast">🎙 Podcast</button>
+          <button class="preset" data-preset="clean">Clean</button>
+          <button class="preset" data-preset="boxed">Boxed</button>
+          <button class="preset" data-preset="minimal">Minimal</button>
+        </div>
+        <div class="preset-row">
+          <span class="muted-small">My presets:</span>
+          <span id="customPresetList" style="display:contents"></span>
+          <button id="savePresetBtn" class="preset" title="Save the current style + export settings as a reusable preset">💾 Save current…</button>
+        </div>
 
-          <label>Caption width <input type="range" id="stWidth" min="30" max="100" step="1" value="84"><span id="stWidthVal" class="mini"></span></label>
-          <label>Vertical position
-            <input type="range" id="stVpos" min="0" max="100" step="0.5" value="90">
-            <span id="stVposVal" class="mini"></span>
-          </label>
-          <div class="pos-quick">
-            <button type="button" class="vq" data-v="8">Top</button>
-            <button type="button" class="vq" data-v="50">Center</button>
-            <button type="button" class="vq" data-v="90">Bottom</button>
-          </div>
-          <div class="chip-row">
-            <label class="chip"><input type="checkbox" id="stItalic"> Italic</label>
-            <label class="chip"><input type="checkbox" id="stUppercase"> UPPERCASE</label>
-          </div>
-          <label>Caption style
-            <select id="stHighlight">
-              <option value="none">Static — plain caption</option>
-              <option value="karaoke">Karaoke — color sweeps with the voice</option>
-              <option value="active">Active word — spoken word lights up</option>
-              <option value="wordbyword">Word-by-word — words appear as spoken</option>
-              <option value="focus">Focus — one big word at a time</option>
-            </select>
-          </label>
-          <label class="chip" style="align-self:flex-start"><input type="checkbox" id="stPopIn"> Pop-in — captions land with a punch</label>
-          <div class="preset-row">
-            <span class="muted-small">Presets:</span>
-            <button class="preset" data-preset="reels">📱 Shorts / Reels</button>
-            <button class="preset" data-preset="clean">Clean</button>
-            <button class="preset" data-preset="viral">Viral</button>
-            <button class="preset" data-preset="boxed">Boxed</button>
-            <button class="preset" data-preset="minimal">Minimal</button>
-          </div>
-          <div class="preset-row">
-            <span class="muted-small">My presets:</span>
-            <span id="customPresetList" style="display:contents"></span>
-            <button id="savePresetBtn" class="preset" title="Save the current style + export settings as a reusable preset">💾 Save current…</button>
-          </div>
+        <div class="style-scroll">
+          <details class="stgroup" open>
+            <summary>Text</summary>
+            <div class="stgroup-body">
+              <label>Font
+                <select id="stFont">
+                  <option>Arial</option><option>Arial Black</option><option>Segoe UI</option>
+                  <option>Segoe UI Black</option><option>Bahnschrift</option><option>Calibri</option>
+                  <option>Cambria</option><option>Candara</option><option>Consolas</option>
+                  <option>Constantia</option><option>Corbel</option><option>Comic Sans MS</option>
+                  <option>Courier New</option><option>Ebrima</option><option>Franklin Gothic Medium</option>
+                  <option>Gabriola</option><option>Gill Sans MT</option><option>Georgia</option>
+                  <option>Impact</option><option>Ink Free</option><option>Lucida Console</option>
+                  <option>Lucida Sans</option><option>Palatino Linotype</option><option>Rockwell</option>
+                  <option>Sitka</option><option>Tahoma</option><option>Times New Roman</option>
+                  <option>Trebuchet MS</option><option>Verdana</option>
+                </select>
+              </label>
+              <div class="opt-grid">
+                <label>Size <input type="range" id="stSize" min="18" max="160" value="54"><span id="stSizeVal" class="mini"></span></label>
+                <label>Thickness <input type="range" id="stWeight" min="100" max="900" step="100" value="700"><span id="stWeightVal" class="mini"></span></label>
+              </div>
+              <div class="chip-row">
+                <label class="chip"><input type="checkbox" id="stItalic"> Italic</label>
+                <label class="chip"><input type="checkbox" id="stUppercase"> UPPERCASE</label>
+              </div>
+            </div>
+          </details>
+
+          <details class="stgroup" open>
+            <summary>Colors</summary>
+            <div class="stgroup-body">
+              <div class="opt-grid">
+                <label>Text <input type="color" id="stPrimary" value="#ffffff"></label>
+                <label>Spoken word <input type="color" id="stAccent" value="#ffe24d"></label>
+              </div>
+              <div class="opt-grid">
+                <label>Keywords <input type="color" id="stKeyword" value="#3dff74"></label>
+                <label>Outline <input type="color" id="stOutlineColor" value="#000000"></label>
+              </div>
+              <p class="muted-small">Keywords = words wrapped in *asterisks* in the captions below — use ✨ Auto-highlight or type them yourself.</p>
+            </div>
+          </details>
+
+          <details class="stgroup">
+            <summary>Effects</summary>
+            <div class="stgroup-body">
+              <div class="opt-grid">
+                <label>Outline <input type="range" id="stOutline" min="0" max="10" step="0.5" value="3"><span id="stOutlineVal" class="mini"></span></label>
+                <label>Shadow <input type="range" id="stShadow" min="0" max="6" step="0.5" value="1"><span id="stShadowVal" class="mini"></span></label>
+              </div>
+              <div class="opt-grid">
+                <label>Glow <input type="range" id="stGlow" min="0" max="8" step="0.5" value="0"><span id="stGlowVal" class="mini"></span></label>
+                <label>Background
+                  <select id="stBackground"><option value="none">None</option><option value="box">Solid box</option><option value="blur">Translucent</option></select>
+                </label>
+              </div>
+              <label class="opt-grid" style="align-items:center">Box opacity <input type="range" id="stBoxOpacity" min="0.2" max="1" step="0.05" value="0.55"><span id="stBoxOpacityVal" class="mini"></span></label>
+            </div>
+          </details>
+
+          <details class="stgroup">
+            <summary>Layout</summary>
+            <div class="stgroup-body">
+              <label>Caption width <input type="range" id="stWidth" min="30" max="100" step="1" value="84"><span id="stWidthVal" class="mini"></span></label>
+              <label>Vertical position
+                <input type="range" id="stVpos" min="0" max="100" step="0.5" value="90">
+                <span id="stVposVal" class="mini"></span>
+              </label>
+              <div class="pos-quick">
+                <button type="button" class="vq" data-v="8">Top</button>
+                <button type="button" class="vq" data-v="50">Center</button>
+                <button type="button" class="vq" data-v="90">Bottom</button>
+              </div>
+            </div>
+          </details>
+
+          <details class="stgroup" open>
+            <summary>Motion</summary>
+            <div class="stgroup-body">
+              <label>Caption style
+                <select id="stHighlight">
+                  <option value="none">Static — plain caption</option>
+                  <option value="karaoke">Karaoke — color sweeps with the voice</option>
+                  <option value="active">Active word — spoken word lights up</option>
+                  <option value="wordbyword">Word-by-word — words appear as spoken</option>
+                  <option value="focus">Focus — one big word at a time</option>
+                </select>
+              </label>
+              <label>Entrance
+                <select id="stEntrance">
+                  <option value="none">None</option>
+                  <option value="pop">Pop — punch in</option>
+                  <option value="slide">Slide up</option>
+                  <option value="fade">Fade in</option>
+                </select>
+              </label>
+            </div>
+          </details>
         </div>
 
         <h3 style="margin-top:16px">Export</h3>
@@ -186,7 +229,11 @@
     <div id="cuesCard" class="card hidden">
       <div class="cues-head">
         <h3>Captions <span id="cueCount" class="pill"></span></h3>
-        <div class="muted-small">Click a row to jump the video there. Edit text and times freely. ✂ splits a line at the cursor (Ctrl+Enter works too); ⤵ merges it with the next line.</div>
+        <div class="cues-tools">
+          <button id="kwBtn" class="ghost" title="AI-detect names, places, brands, numbers and punch words, and color them with the Keywords color">✨ Auto-highlight keywords</button>
+          <span id="kwStatus" class="muted-small"></span>
+        </div>
+        <div class="muted-small">Click a row to jump the video there. Edit text and times freely. ✂ splits a line at the cursor (Ctrl+Enter works too); ⤵ merges it with the next line. Wrap words in *asterisks* to color them as keywords.</div>
       </div>
       <div class="sync-box">
         <label>Sync offset

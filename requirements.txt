@@ -1,4 +1,6 @@
 yt-dlp
+yt-dlp-ejs                    # JS scripts for YouTube n-sig challenge (needs Node >= 22 on PATH)
+bgutil-ytdlp-pot-provider    # yt-dlp plugin that fetches PO tokens from the bgutil provider
 fastapi
 uvicorn
 python-multipart

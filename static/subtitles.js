@@ -266,9 +266,28 @@ $("addCue").addEventListener("click", () => {
   renderCues(); syncOverlay();
 });
 
+// AI keyword pass: marks names/places/brands/numbers/punch words with
+// *asterisks* so they render in the Keywords color. Safe to re-run.
+$("kwBtn").addEventListener("click", async () => {
+  if (!cues.length) { $("kwStatus").textContent = "no captions yet"; return; }
+  $("kwBtn").disabled = true;
+  $("kwStatus").textContent = "detecting…";
+  try {
+    const r = await post("/api/subtitles/keywords", { cues });
+    cues = r.cues;
+    renderCues(); invalidateOverlay();
+    $("kwStatus").textContent = r.engine === "ai"
+      ? "✓ keywords marked (AI)" : "✓ keywords marked (heuristic — no AI key)";
+  } catch (e) {
+    $("kwStatus").textContent = "failed: " + e.message;
+  }
+  $("kwBtn").disabled = false;
+  setTimeout(() => { $("kwStatus").textContent = ""; }, 5000);
+});
+
 // ---------------------------------------------------------------- style + overlay
-const styleIds = ["stFont","stSize","stWeight","stPrimary","stAccent","stOutlineColor","stOutline","stShadow",
-  "stBackground","stBoxOpacity","stWidth","stVpos","stItalic","stUppercase","stHighlight","stPopIn"];
+const styleIds = ["stFont","stSize","stWeight","stPrimary","stAccent","stKeyword","stOutlineColor","stOutline",
+  "stShadow","stGlow","stBackground","stBoxOpacity","stWidth","stVpos","stItalic","stUppercase","stHighlight","stEntrance"];
 styleIds.forEach(id => $(id).addEventListener("input", () => { updateStyleLabels(); syncOverlay(); }));
 
 const WEIGHT_NAMES = { 100:"Thin", 200:"Extra Light", 300:"Light", 400:"Regular",
@@ -279,6 +298,7 @@ function updateStyleLabels() {
   $("stWeightVal").textContent = WEIGHT_NAMES[$("stWeight").value] || $("stWeight").value;
   $("stOutlineVal").textContent = $("stOutline").value;
   $("stShadowVal").textContent = $("stShadow").value;
+  $("stGlowVal").textContent = +$("stGlow").value > 0 ? $("stGlow").value : "off";
   $("stBoxOpacityVal").textContent = Math.round($("stBoxOpacity").value * 100) + "%";
   $("stWidthVal").textContent = $("stWidth").value + "%";
   $("stVposVal").textContent = Math.round($("stVpos").value) + "% from top";
@@ -286,15 +306,18 @@ function updateStyleLabels() {
 updateStyleLabels();
 
 function currentStyle() {
+  const entrance = $("stEntrance").value;
   return {
     font: $("stFont").value,
     size: +$("stSize").value,
     weight: +$("stWeight").value,
     primary: $("stPrimary").value,
     accent: $("stAccent").value,
+    keyword_color: $("stKeyword").value,
     outline_color: $("stOutlineColor").value,
     outline: +$("stOutline").value,
     shadow: +$("stShadow").value,
+    glow: +$("stGlow").value,
     italic: $("stItalic").checked,
     uppercase: $("stUppercase").checked,
     background: $("stBackground").value,
@@ -302,16 +325,35 @@ function currentStyle() {
     max_width: +$("stWidth").value,
     vpos: +$("stVpos").value,
     highlight: $("stHighlight").value,
-    pop_in: $("stPopIn").checked,
+    entrance,
+    pop_in: entrance === "pop", // legacy field, kept for old server presets
   };
 }
 
+// Mirror of subtitles.py parse_em_tokens: *word* / *multi word* spans mark
+// keyword emphasis; markers are stripped for display and the flag drives color.
+function parseEm(tokens) {
+  const out = []; let em = false;
+  for (let t of tokens) {
+    let opened = false;
+    if (t.startsWith("*") && t.length > 1) { t = t.slice(1); em = true; opened = true; }
+    let closed = false;
+    const m = t.match(/^(.*)\*([.,;:!?…"')\]]*)$/);
+    if (m && (em || opened) && m[1]) { t = m[1] + m[2]; closed = true; }
+    out.push({ t, em });
+    if (closed) em = false;
+  }
+  return out;
+}
+
 const PRESETS = {
-  reels:   { font: "Arial Black", size: 66, weight: 900, primary: "#ffffff", accent: "#00e5ff", outline_color: "#000000", outline: 6, shadow: 2, uppercase: true, background: "none", highlight: "active", pop_in: true, max_width: 88, vpos: 50, export_ratio: "9:16", export_fit: "crop" },
-  clean:   { font: "Arial", size: 54, weight: 700, primary: "#ffffff", accent: "#ffe24d", outline_color: "#000000", outline: 3, shadow: 1, uppercase: false, background: "none", highlight: "none", pop_in: false, max_width: 84, vpos: 90 },
-  viral:   { font: "Impact", size: 78, weight: 900, primary: "#ffffff", accent: "#00e5ff", outline_color: "#000000", outline: 5, shadow: 2, uppercase: true, background: "none", highlight: "karaoke", pop_in: true, max_width: 80, vpos: 62 },
-  boxed:   { font: "Segoe UI", size: 48, weight: 700, primary: "#ffffff", accent: "#ffe24d", outline_color: "#000000", outline: 0, shadow: 0, uppercase: false, background: "box", highlight: "none", pop_in: false, max_width: 84, vpos: 90 },
-  minimal: { font: "Georgia", size: 44, weight: 400, primary: "#ffffff", accent: "#ffd166", outline_color: "#000000", outline: 2, shadow: 1, uppercase: false, background: "blur", highlight: "none", pop_in: false, max_width: 78, vpos: 90 },
+  reels:   { font: "Arial Black", size: 66, weight: 900, primary: "#ffffff", accent: "#00e5ff", keyword_color: "#b4ff39", outline_color: "#000000", outline: 6, shadow: 2, glow: 0, uppercase: true, background: "none", highlight: "active", entrance: "pop", max_width: 88, vpos: 50, export_ratio: "9:16", export_fit: "crop" },
+  hormozi: { font: "Arial Black", size: 72, weight: 900, primary: "#ffffff", accent: "#ffd400", keyword_color: "#00ff47", outline_color: "#000000", outline: 5, shadow: 2, glow: 0, uppercase: true, background: "none", highlight: "active", entrance: "pop", max_width: 82, vpos: 55 },
+  viral:   { font: "Impact", size: 78, weight: 900, primary: "#ffffff", accent: "#00e5ff", keyword_color: "#ff4d6d", outline_color: "#000000", outline: 5, shadow: 2, glow: 0, uppercase: true, background: "none", highlight: "karaoke", entrance: "pop", max_width: 80, vpos: 62 },
+  podcast: { font: "Segoe UI", size: 46, weight: 600, primary: "#ffffff", accent: "#4dc3ff", keyword_color: "#4dc3ff", outline_color: "#000000", outline: 0, shadow: 0, glow: 0, uppercase: false, background: "blur", highlight: "karaoke", entrance: "fade", max_width: 70, vpos: 88 },
+  clean:   { font: "Arial", size: 54, weight: 700, primary: "#ffffff", accent: "#ffe24d", keyword_color: "#ffd84d", outline_color: "#000000", outline: 3, shadow: 1, glow: 0, uppercase: false, background: "none", highlight: "none", entrance: "none", max_width: 84, vpos: 90 },
+  boxed:   { font: "Segoe UI", size: 48, weight: 700, primary: "#ffffff", accent: "#ffe24d", keyword_color: "#ffe24d", outline_color: "#000000", outline: 0, shadow: 0, glow: 0, uppercase: false, background: "box", highlight: "none", entrance: "none", max_width: 84, vpos: 90 },
+  minimal: { font: "Georgia", size: 44, weight: 400, primary: "#ffffff", accent: "#ffd166", keyword_color: "#ffd166", outline_color: "#000000", outline: 2, shadow: 1, glow: 0, uppercase: false, background: "blur", highlight: "none", entrance: "fade", max_width: 78, vpos: 90 },
 };
 // Apply a flat style/export object to every control it carries. Shared by the
 // built-in presets and user-saved presets.
@@ -319,12 +361,14 @@ function applyStyleValues(p) {
   const set = (id, v) => { if (v !== undefined && v !== null) $(id).value = v; };
   const setChk = (id, v) => { if (v !== undefined && v !== null) $(id).checked = !!v; };
   set("stFont", p.font); set("stSize", p.size); set("stWeight", p.weight);
-  set("stPrimary", p.primary); set("stAccent", p.accent);
+  set("stPrimary", p.primary); set("stAccent", p.accent); set("stKeyword", p.keyword_color);
   set("stOutlineColor", p.outline_color); set("stOutline", p.outline);
-  set("stShadow", p.shadow); set("stBackground", p.background);
+  set("stShadow", p.shadow); set("stGlow", p.glow); set("stBackground", p.background);
   set("stBoxOpacity", p.box_opacity); set("stWidth", p.max_width); set("stVpos", p.vpos);
   set("stHighlight", p.highlight);
-  setChk("stItalic", p.italic); setChk("stUppercase", p.uppercase); setChk("stPopIn", p.pop_in);
+  // entrance supersedes the legacy pop_in checkbox from older saved presets
+  set("stEntrance", p.entrance !== undefined ? p.entrance : (p.pop_in ? "pop" : (p.pop_in === false ? "none" : undefined)));
+  setChk("stItalic", p.italic); setChk("stUppercase", p.uppercase);
   set("exportRatio", p.export_ratio); set("exportFit", p.export_fit); set("padColor", p.pad_color);
   updateStyleLabels();
   if (p.export_ratio || p.export_fit) applyExportFrame();
@@ -470,7 +514,13 @@ function syncOverlay() {
   const c = cues[idx];
   const ws = (c.words && c.words.length) ? c.words : null;
   const mode = ws ? st.highlight : "none";
-  const T = (w) => escapeHtml(st.uppercase ? w.w.toUpperCase() : w.w);
+
+  // Tokens + keyword-emphasis flags (markers stripped for display).
+  const rawToks = ws ? ws.map(w => w.w)
+                     : (c.text || "").split(/\s+/).filter(Boolean);
+  const toks = parseEm(rawToks);
+  const T = (i) => escapeHtml(st.uppercase ? toks[i].t.toUpperCase() : toks[i].t);
+  const col = (i, base) => toks[i].em ? st.keyword_color : base;
 
   // Active word index within this cue (-1 before the first word is spoken).
   let awi = -1;
@@ -487,32 +537,40 @@ function syncOverlay() {
   // Per-mode word rendering (mirrors the burned ASS output).
   let inner;
   if (mode === "karaoke") {
-    inner = ws.map((w, i) =>
-      `<span style="color:${i <= awi ? st.accent : st.primary}">${T(w)}</span>`).join(" ");
+    inner = toks.map((x, i) =>
+      `<span style="color:${i <= awi ? st.accent : col(i, st.primary)}">${T(i)}</span>`).join(" ");
   } else if (mode === "active") {
-    inner = ws.map((w, i) => i === awi
-      ? `<span class="w-active" style="color:${st.accent};font-weight:900">${T(w)}</span>`
-      : `<span>${T(w)}</span>`).join(" ");
+    inner = toks.map((x, i) => i === awi
+      ? `<span class="w-active" style="color:${st.accent};font-weight:900">${T(i)}</span>`
+      : `<span style="color:${col(i, st.primary)}">${T(i)}</span>`).join(" ");
   } else if (mode === "wordbyword") {
-    inner = ws.map((w, i) =>
-      `<span class="${i === awi ? "w-appear" : ""}" style="visibility:${i <= awi ? "visible" : "hidden"}">${T(w)}</span>`).join(" ");
+    inner = toks.map((x, i) =>
+      `<span class="${i === awi ? "w-appear" : ""}" style="color:${col(i, st.primary)};visibility:${i <= awi ? "visible" : "hidden"}">${T(i)}</span>`).join(" ");
   } else if (mode === "focus") {
-    const w = ws[Math.max(0, awi)];
-    inner = `<span class="w-focus" style="display:inline-block">${T(w)}</span>`;
+    const i = Math.max(0, awi);
+    inner = `<span class="w-focus" style="display:inline-block;color:${col(i, st.primary)}">${T(i)}</span>`;
   } else {
-    inner = escapeHtml(st.uppercase ? (c.text || "").toUpperCase() : (c.text || ""));
+    inner = toks.map((x, i) =>
+      `<span style="color:${col(i, st.primary)}">${T(i)}</span>`).join(" ");
   }
 
   const focusScale = mode === "focus" ? 1.3 : 1;
-  const shadow = st.shadow > 0 ? `${1.5 * scale}px ${1.5 * scale}px ${st.shadow * scale}px rgba(0,0,0,.9)` : "none";
+  const shadowParts = [];
+  if (st.shadow > 0) shadowParts.push(`${1.5 * scale}px ${1.5 * scale}px ${st.shadow * scale}px rgba(0,0,0,.9)`);
+  if (st.glow > 0) {
+    const g = st.glow * 2.2 * scale;
+    shadowParts.push(`0 0 ${g}px ${st.outline_color}`, `0 0 ${g * 2}px ${st.outline_color}`);
+  }
+  const shadow = shadowParts.join(",") || "none";
   let bg = "transparent", pad = "0", radius = "0", bd = "";
   if (st.background === "box") { bg = "rgba(0,0,0,0.82)"; pad = `${4*scale}px ${14*scale}px`; radius = `${8*scale}px`; }
   else if (st.background === "blur") { bg = "rgba(0,0,0,0.4)"; pad = `${4*scale}px ${14*scale}px`; radius = `${8*scale}px`; bd = "backdrop-filter:blur(6px);"; }
 
-  // Pop-in punch fires when the CUE changes (not on word updates within it).
+  // Entrance animation fires when the CUE changes (not on word updates within it).
   const cueChanged = String(idx) !== overlay.dataset.cue;
   overlay.dataset.cue = String(idx);
-  const popClass = st.pop_in && cueChanged ? " cap-pop" : "";
+  const ent = st.entrance || "none";
+  const popClass = ent !== "none" && cueChanged ? ` cap-${ent}` : "";
 
   overlay.innerHTML = `<span class="cap-text${popClass}" style="
     font-family:'${st.font}',sans-serif;
