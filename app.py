@@ -571,8 +571,16 @@ def set_cookies(body: dict):
 
 @app.post("/api/update-ytdlp")
 def update_ytdlp():
+    # Track the *nightly* channel, not stable. When YouTube changes something,
+    # the fix lands in master within a day or two but the next stable tag can be
+    # weeks out — so upgrading to stable is usually a no-op that leaves the app
+    # broken (every format 403s). `--pre` picks up the nightly builds yt-dlp
+    # publishes to PyPI, which is what the project itself recommends when
+    # extraction is failing. The [default] extra keeps the optional deps
+    # (websockets, pycryptodomex, ...) in sync with the new build.
     result = subprocess.run(
-        [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+        [sys.executable, "-m", "pip", "install", "--upgrade", "--pre",
+         "yt-dlp[default]"],
         capture_output=True, text=True, timeout=300,
     )
     if result.returncode != 0:
