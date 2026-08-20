@@ -68,6 +68,77 @@ import potoken  # noqa: E402  PO-token provider lifecycle (YouTube stream access
 # Detect Node once so we only enable the runtime when it's actually usable.
 _NODE_PATH = shutil.which("node")
 
+# yt-dlp-ejs needs a modern Node; an older one is worse than none, because the
+# runtime registers as available and then fails mid-extraction.
+_NODE_MIN_MAJOR = 22
+
+
+def _node_major() -> int | None:
+    """Major version of the Node on PATH, or None if absent/unparseable."""
+    if not _NODE_PATH:
+        return None
+    try:
+        out = subprocess.run(
+            [_NODE_PATH, "--version"], capture_output=True, text=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout.strip()
+        m = re.match(r"v?(\d+)\.", out)
+        return int(m.group(1)) if m else None
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
+
+
+# The yt-dlp nightly channel is what actually keeps working: when YouTube changes
+# something, the extractor fix lands in master within a day or two but the next
+# stable tag can be weeks out, and in the meantime *every* format 403s. Stable
+# releases are dated `YYYY.MM.DD`, nightlies `YYYY.MM.DD.HHMMSS`, so a 4-part
+# version string is the marker for "on the nightly channel".
+def _ytdlp_is_nightly() -> bool:
+    return len(yt_dlp.version.__version__.split(".")) >= 4
+
+
+def preflight() -> dict:
+    """Report the external prerequisites downloads depend on.
+
+    Every confusing YouTube failure so far has traced back to one of these being
+    missing or stale on the machine in question, so they are reported together
+    and folded into download error messages (see run_with_fallbacks).
+    """
+    node_major = _node_major()
+    return {
+        "ytdlp_version": yt_dlp.version.__version__,
+        "ytdlp_nightly": _ytdlp_is_nightly(),
+        "node_path": _NODE_PATH,
+        "node_major": node_major,
+        "node_ok": bool(node_major and node_major >= _NODE_MIN_MAJOR),
+        "ffmpeg": bool(shutil.which("ffmpeg")),
+        "ffprobe": bool(shutil.which("ffprobe")),
+        "pot_provider": potoken.status().get("state"),
+    }
+
+
+def preflight_problems(pf: dict | None = None) -> list[str]:
+    """Human-readable list of prerequisites that are missing or stale."""
+    pf = pf or preflight()
+    problems = []
+    if not pf["ytdlp_nightly"]:
+        problems.append(
+            f"yt-dlp {pf['ytdlp_version']} is a STABLE release. Stable lags behind "
+            "YouTube's changes by weeks and makes every format return 403. Click "
+            "'Update yt-dlp' in Settings (it tracks the nightly channel), then "
+            "restart the app. THIS IS ALMOST ALWAYS THE PROBLEM."
+        )
+    if not pf["node_ok"]:
+        have = f"v{pf['node_major']}" if pf["node_major"] else "not installed"
+        problems.append(
+            f"Node >= {_NODE_MIN_MAJOR} is required to solve YouTube's n-signature "
+            f"challenge (currently {have}). Without it several player clients return "
+            "no downloadable formats. Install it from https://nodejs.org and restart."
+        )
+    if not pf["ffmpeg"]:
+        problems.append("ffmpeg is not on PATH — merging, trimming and MP3 need it.")
+    return problems
+
 app = FastAPI(title="Sourcer")
 
 
@@ -236,6 +307,18 @@ def run_with_fallbacks(settings: dict, extra_opts: dict, url: str, download: boo
             " — YouTube wants a signed-in session. In Settings, set Cookies: either "
             "paste a cookies.txt export, or use 'Read from browser' (Firefox is most "
             "reliable on Windows) so a logged-in session is re-read on every download."
+        )
+
+    # A broken environment produces exactly the same 403 / "no formats" cascade as
+    # a genuine auth problem, and the cookie advice above is then a red herring
+    # that sends people chasing the wrong fix. Lead with the environment when
+    # something is actually wrong with it.
+    if problems := preflight_problems():
+        hint = (
+            " — FIX THIS FIRST: "
+            + " ALSO: ".join(problems)
+            + " (Other possible cause, only if the above is already correct:"
+            + hint[3:] + ")"
         )
     raise DownloadError(msg + hint)
 
@@ -525,6 +608,14 @@ def get_settings():
     s["node_available"] = bool(_NODE_PATH)
     s["pot_provider"] = potoken.status()
     return s
+
+
+@app.get("/api/preflight")
+def get_preflight():
+    """Environment health, for diagnosing 'it doesn't work on my PC' reports."""
+    pf = preflight()
+    problems = preflight_problems(pf)
+    return {"ok": not problems, "problems": problems, **pf}
 
 
 @app.get("/api/pot-status")
