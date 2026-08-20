@@ -26,12 +26,12 @@ Missing any of these produces a confusing cascade of `HTTP Error 403`,
 that look like an auth/cookie problem but are not. Open
 http://127.0.0.1:8765/api/preflight to see which are missing on a given machine.
 
-| Requirement | Why | Notes |
+| Requirement | Required? | Why |
 |---|---|---|
-| **ffmpeg + ffprobe** on PATH | merging, trimming, MP3 | |
-| **Node >= 22** on PATH | solves YouTube's `n`-signature challenge via `yt-dlp-ejs` | [nodejs.org](https://nodejs.org). Without it, several player clients return **no downloadable formats**. |
-| **yt-dlp nightly** | stable lags YouTube by weeks | `requirements.txt` pins the nightly channel on purpose — see the comment there. A *stable* yt-dlp makes **every** format 403. |
-| Docker Desktop | runs the bgutil PO-token provider | Optional in practice; useful for videos whose streams are withheld without a PO token. |
+| **yt-dlp nightly** | **yes** | Stable lags YouTube by weeks, and while it does, *every* format fails with 403 or "no formats". `requirements.txt` pins the nightly channel on purpose — see the comment there. This is by far the most common cause of breakage. |
+| **ffmpeg + ffprobe** on PATH | **yes** | Merging, trimming, MP3 conversion. |
+| Node >= 22 on PATH | no — recommended | Lets yt-dlp solve YouTube's `n`-signature challenge via `yt-dlp-ejs`, which restores the `mweb` fallback client. Downloads work without it (verified on nightly); without it that one client reports no formats. [nodejs.org](https://nodejs.org) |
+| Docker Desktop | no | Runs the bgutil PO-token provider. Useful for videos whose streams are withheld without a PO token; not needed for ordinary downloads on nightly. |
 
 ## Features
 

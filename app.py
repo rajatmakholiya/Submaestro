@@ -118,26 +118,49 @@ def preflight() -> dict:
 
 
 def preflight_problems(pf: dict | None = None) -> list[str]:
-    """Human-readable list of prerequisites that are missing or stale."""
+    """Prerequisites that will, on their own, stop downloads from working.
+
+    Deliberately narrow. Listing merely-suboptimal things here sends people off
+    installing software that was never the cause, which is the exact wrong-fix
+    chase this whole diagnostic exists to prevent. Anything that only removes a
+    fallback belongs in preflight_advisories().
+    """
     pf = pf or preflight()
     problems = []
     if not pf["ytdlp_nightly"]:
         problems.append(
-            f"yt-dlp {pf['ytdlp_version']} is a STABLE release. Stable lags behind "
-            "YouTube's changes by weeks and makes every format return 403. Click "
-            "'Update yt-dlp' in Settings (it tracks the nightly channel), then "
-            "restart the app. THIS IS ALMOST ALWAYS THE PROBLEM."
-        )
-    if not pf["node_ok"]:
-        have = f"v{pf['node_major']}" if pf["node_major"] else "not installed"
-        problems.append(
-            f"Node >= {_NODE_MIN_MAJOR} is required to solve YouTube's n-signature "
-            f"challenge (currently {have}). Without it several player clients return "
-            "no downloadable formats. Install it from https://nodejs.org and restart."
+            f"yt-dlp {pf['ytdlp_version']} is a stable release, and stable lags "
+            "YouTube's changes by weeks — while it does, every format fails with "
+            "403 or 'no formats'. Fix: click 'Update yt-dlp' in Settings (it "
+            "tracks the nightly channel), then restart the app. This is by far "
+            "the most common cause."
         )
     if not pf["ffmpeg"]:
-        problems.append("ffmpeg is not on PATH — merging, trimming and MP3 need it.")
+        problems.append(
+            "ffmpeg is not on PATH — merging, trimming and MP3 conversion all "
+            "need it. Install it and restart."
+        )
     return problems
+
+
+def preflight_advisories(pf: dict | None = None) -> list[str]:
+    """Things worth fixing that are NOT sufficient to break downloads.
+
+    Verified on the nightly channel: downloads succeed with no Node present, so
+    Node only buys back the `mweb` fallback client rather than being required.
+    """
+    pf = pf or preflight()
+    notes = []
+    if not pf["node_ok"]:
+        have = f"v{pf['node_major']}" if pf["node_major"] else "not installed"
+        notes.append(
+            f"Node >= {_NODE_MIN_MAJOR} is recommended but not required "
+            f"(currently {have}). It lets yt-dlp solve YouTube's n-signature "
+            "challenge, which restores the 'mweb' fallback client; without it "
+            "that one client reports no formats. Downloads still work without "
+            "it. Get it from https://nodejs.org if you want the extra fallback."
+        )
+    return notes
 
 app = FastAPI(title="Sourcer")
 
@@ -312,12 +335,15 @@ def run_with_fallbacks(settings: dict, extra_opts: dict, url: str, download: boo
     # A broken environment produces exactly the same 403 / "no formats" cascade as
     # a genuine auth problem, and the cookie advice above is then a red herring
     # that sends people chasing the wrong fix. Lead with the environment when
-    # something is actually wrong with it.
+    # something is actually wrong with it — but only with things that genuinely
+    # block downloads, so the instruction stays trustworthy. Advisories are
+    # intentionally left out of this message entirely; they live on
+    # GET /api/preflight, where they can't be mistaken for the fix.
     if problems := preflight_problems():
         hint = (
             " — FIX THIS FIRST: "
             + " ALSO: ".join(problems)
-            + " (Other possible cause, only if the above is already correct:"
+            + " (Only if the above is already correct, the other possible cause is:"
             + hint[3:] + ")"
         )
     raise DownloadError(msg + hint)
@@ -615,7 +641,8 @@ def get_preflight():
     """Environment health, for diagnosing 'it doesn't work on my PC' reports."""
     pf = preflight()
     problems = preflight_problems(pf)
-    return {"ok": not problems, "problems": problems, **pf}
+    return {"ok": not problems, "problems": problems,
+            "advisories": preflight_advisories(pf), **pf}
 
 
 @app.get("/api/pot-status")
