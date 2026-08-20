@@ -1,5 +1,14 @@
-yt-dlp
-yt-dlp-ejs                    # JS scripts for YouTube n-sig challenge (needs Node >= 22 on PATH)
+# yt-dlp NIGHTLY, not stable. This floor is deliberately a `.dev0` version: it
+# both documents a known-good build and tells pip that pre-releases are allowed
+# for this package (pip then installs the newest nightly). Do not "clean this up"
+# to a bare `yt-dlp` — that resolves to the latest *stable* tag, which lags
+# YouTube's changes by weeks and makes every single format fail with HTTP 403.
+yt-dlp>=2026.8.19.233000.dev0
+
+yt-dlp-ejs                   # JS scripts for YouTube's n-signature challenge.
+                             # REQUIRES Node >= 22 on PATH (https://nodejs.org).
+                             # Without Node, several player clients return no
+                             # downloadable formats at all.
 bgutil-ytdlp-pot-provider    # yt-dlp plugin that fetches PO tokens from the bgutil provider
 fastapi
 uvicorn

@@ -19,7 +19,19 @@ python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
 
-`ffmpeg` must be on PATH (needed for merging, trimming, and MP3 conversion).
+### Prerequisites — install these before reporting a broken download
+
+Missing any of these produces a confusing cascade of `HTTP Error 403`,
+`Requested format is not available`, and `The page needs to be reloaded` errors
+that look like an auth/cookie problem but are not. Open
+http://127.0.0.1:8765/api/preflight to see which are missing on a given machine.
+
+| Requirement | Why | Notes |
+|---|---|---|
+| **ffmpeg + ffprobe** on PATH | merging, trimming, MP3 | |
+| **Node >= 22** on PATH | solves YouTube's `n`-signature challenge via `yt-dlp-ejs` | [nodejs.org](https://nodejs.org). Without it, several player clients return **no downloadable formats**. |
+| **yt-dlp nightly** | stable lags YouTube by weeks | `requirements.txt` pins the nightly channel on purpose — see the comment there. A *stable* yt-dlp makes **every** format 403. |
+| Docker Desktop | runs the bgutil PO-token provider | Optional in practice; useful for videos whose streams are withheld without a PO token. |
 
 ## Features
 
@@ -35,11 +47,15 @@ python -m venv .venv
 ## When downloads break ("Sign in to confirm you're not a bot", 403, 429…)
 
 The app already auto-retries every request across multiple YouTube player
-clients (default → android → ios → tv) before reporting failure. If it still
-fails, open **⚙️ Settings** and fix it once — the fix persists:
+clients (default → web_safari → mweb → tv) before reporting failure. If it still
+fails, **check http://127.0.0.1:8765/api/preflight first** — a stale yt-dlp or a
+missing Node produces errors that look exactly like an auth problem, and the
+cookie advice below will waste your time if that's what's actually wrong.
 
-1. **Update yt-dlp** — the #1 cause of sudden breakage is a stale yt-dlp.
-   One click, then restart the app.
+Then open **⚙️ Settings** and fix it once — the fix persists:
+
+1. **Update yt-dlp** — the #1 cause of sudden breakage, by a wide margin.
+   One click (it tracks the nightly channel), then restart the app.
 2. **Cookies** — fixes login-required, age-restricted, and bot-check errors.
    Recommended: install the *Get cookies.txt LOCALLY* browser extension, export
    cookies while logged in to youtube.com, paste into Settings. (Reading
