@@ -429,6 +429,22 @@ def _build_download_opts(req: DownloadRequest, job_id: str) -> dict:
             # other editors can read it. Output is always MP4 here.
             opts["format"] = f"bestvideo{hf}+bestaudio/best{hf}/best"
             opts["merge_output_format"] = "mp4"
+            # ...but among formats of the SAME resolution, take H.264. Since the
+            # output is H.264 either way, an H.264 source makes _reencode_to_h264
+            # a no-op: measured 2s instead of 46s transcoding AV1 for a 30s 1080p
+            # clip, and it skips a generation of re-encode loss entirely.
+            #
+            # This has to be a sort, not a `[vcodec^=avc1]` branch in the selector
+            # above: that branch would match 1080p H.264 on a 4K video and
+            # silently hand back 1080p. Sorting by `res` first keeps resolution
+            # authoritative and uses codec only as a tie-break, so 4K still comes
+            # down as 4K.
+            #
+            # Above 1080p there is no H.264, so this lands on VP9 instead of AV1
+            # and the transcode still happens. That case is no faster (measured
+            # 59s vs 60s for a 10s 2160p clip) — at 4K the libx264 encode
+            # dominates, not the decode. The win here is strictly ≤1080p.
+            opts["format_sort"] = ["res", "vcodec:h264"]
         elif container == "mp4":
             # No re-encode, but still target MP4: prefer native H.264 (avc1) +
             # AAC (mp4a) so it opens without transcoding. Caps at 1080p, since
